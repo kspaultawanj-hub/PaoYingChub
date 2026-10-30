@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>เป่ายิ้งฉุบ vs AI</title>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/hands.js" crossorigin="anonymous"></script>
+<style>
+  :root {
+    --green-900: #0b4f2c;
+    --green-700: #15803d;
+    --green-500: #22c55e;
+    --green-200: #bbf7d0;
+    --green-50: #f0fdf4;
+    --white: #ffffff;
+    --ink: #14301f;
+    --muted: #5b7a66;
+    --lose: #dc2626;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: "Sarabun", "Noto Sans Thai", system-ui, -apple-system, "Segoe UI", sans-serif;
+    background: linear-gradient(160deg, var(--green-50), var(--white) 55%, var(--green-200));
+    color: var(--ink);
+    min-height: 100vh;
+  }
+  header { text-align: center; padding: 28px 16px 8px; }
+  header h1 { margin: 0; font-size: clamp(26px, 5vw, 40px); color: var(--green-900); letter-spacing: .5px; }
+  header p { margin: 6px 0 0; color: var(--muted); }
+  main { max-width: 1040px; margin: 0 auto; padding: 16px; display: grid; gap: 20px; grid-template-columns: 1.15fr 1fr; }
+  @media (max-width: 820px) { main { grid-template-columns: 1fr; } }
+  .card {
+    background: var(--white);
+    border: 2px solid var(--green-200);
+    border-radius: 22px;
+    box-shadow: 0 10px 30px rgba(21, 128, 61, .10);
+    padding: 16px;
+  }
+  .cam-wrap { position: relative; border-radius: 16px; overflow: hidden; background: var(--green-900); aspect-ratio: 4 / 3; }
+  video, canvas.overlay { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
+  .cam-msg {
+    position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    text-align: center; color: var(--green-200); padding: 20px; font-size: 17px; line-height: 1.6;
+  }
+  .badge {
+    position: absolute; left: 12px; bottom: 12px; background: rgba(255,255,255,.92); color: var(--green-900);
+    border-radius: 999px; padding: 6px 14px; font-weight: 700; font-size: 15px;
+  }
+  .countdown {
+    position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    font-size: clamp(52px, 12vw, 96px); font-weight: 800; color: var(--white);
+    text-shadow: 0 4px 24px rgba(0,0,0,.45); pointer-events: none;
+  }
+  .scoreboard { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; text-align: center; margin-bottom: 14px; }
+  .score { background: var(--green-50); border-radius: 14px; padding: 10px 6px; }
+  .score b { display: block; font-size: 30px; color: var(--green-700); }
+  .score span { font-size: 13px; color: var(--muted); }
+  .arena { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 8px; text-align: center; margin: 8px 0 14px; }
+  .side .emoji {
+    font-size: 64px; line-height: 1; width: 100px; height: 100px; margin: 0 auto 6px;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--green-50); border: 2px dashed var(--green-500); border-radius: 50%;
+  }
+  .side small { color: var(--muted); font-weight: 600; }
+  .vs { font-weight: 800; color: var(--green-500); font-size: 20px; }
+  .result {
+    min-height: 58px; display: flex; align-items: center; justify-content: center; text-align: center;
+    font-size: 22px; font-weight: 800; border-radius: 14px; padding: 10px; background: var(--green-50); color: var(--green-900);
+  }
+  .result.win { background: var(--green-500); color: var(--white); }
+  .result.lose { background: #fee2e2; color: var(--lose); }
+  .result.draw { background: var(--green-200); color: var(--green-900); }
+  .controls { display: flex; gap: 10px; margin-top: 14px; }
+  button {
+    flex: 1; border: 0; cursor: pointer; font: inherit; font-weight: 700; font-size: 17px;
+    padding: 14px; border-radius: 14px; background: var(--green-700); color: var(--white); transition: transform .1s, background .2s;
+  }
+  button:hover:not(:disabled) { background: var(--green-900); }
+  button:active:not(:disabled) { transform: scale(.97); }
+  button:disabled { background: #b8cfc0; cursor: not-allowed; }
+  button.secondary { background: var(--white); color: var(--green-700); border: 2px solid var(--green-500); flex: 0 0 auto; padding: 14px 18px; }
+  button.secondary:hover:not(:disabled) { background: var(--green-50); color: var(--green-900); }
+  .help { margin-top: 14px; font-size: 14px; color: var(--muted); line-height: 1.7; }
+  .help b { color: var(--green-700); }
+  footer { text-align: center; color: var(--muted); font-size: 13px; padding: 8px 16px 28px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>✊ ✋ ✌️ เป่ายิ้งฉุบ vs AI</h1>
+  <p>ใช้กล้องและ Machine Vision ตรวจจับท่ามือของคุณแบบเรียลไทม์</p>
+</header>
+
+<main>
+  <section class="card">
+    <div class="cam-wrap">
+      <video id="video" playsinline muted></video>
+      <canvas id="overlay" class="overlay"></canvas>
+      <div class="cam-msg" id="camMsg">กด “เปิดกล้อง” เพื่อเริ่มต้น<br>(ภาพทั้งหมดประมวลผลในเครื่องของคุณ ไม่ถูกอัปโหลด)</div>
+      <div class="badge" id="liveBadge" hidden>ตรวจพบ: -</div>
+      <div class="countdown" id="countdown"></div>
+    </div>
+    <div class="controls">
+      <button id="camBtn">📷 เปิดกล้อง</button>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="scoreboard">
+      <div class="score"><b id="sWin">0</b><span>คุณชนะ</span></div>
+      <div class="score"><b id="sDraw">0</b><span>เสมอ</span></div>
+      <div class="score"><b id="sLose">0</b><span>AI ชนะ</span></div>
+    </div>
+
+    <div class="arena">
+      <div class="side"><div class="emoji" id="youEmoji">❔</div><small>คุณ</small></div>
+      <div class="vs">VS</div>
+      <div class="side"><div class="emoji" id="aiEmoji">🤖</div><small>AI</small></div>
+    </div>
+
+    <div class="result" id="result">กดเปิดกล้อง แล้วกด “เริ่มเล่น”</div>
+
+    <div class="controls">
+      <button id="playBtn" disabled>▶ เริ่มเล่น</button>
+      <button id="resetBtn" class="secondary">รีเซ็ตคะแนน</button>
+    </div>
+
+    <div class="help">
+      <b>วิธีเล่น:</b> ยกมือให้อยู่ในกรอบกล้อง เมื่อนับถึง “ฉุบ!” ให้ทำท่าค้างไว้ครู่หนึ่ง<br>
+      ✊ <b>ค้อน</b> = กำมือ &nbsp; ✋ <b>กระดาษ</b> = แบมือ 4 นิ้ว &nbsp; ✌️ <b>กรรไกร</b> = ชูนิ้วชี้กับนิ้วกลาง
+    </div>
+  </section>
+</main>
+
+<footer>ขับเคลื่อนด้วย MediaPipe Hands · ธีมเขียว-ขาว</footer>
+
+<script>
+(() => {
+  const GESTURES = {
+    rock:     { emoji: "✊", name: "ค้อน" },
+    paper:    { emoji: "✋", name: "กระดาษ" },
+    scissors: { emoji: "✌️", name: "กรรไกร" }
+  };
+  const BEATS = { rock: "scissors", scissors: "paper", paper: "rock" };
+
+  const $ = id => document.getElementById(id);
+  const video = $("video"), canvas = $("overlay"), ctx = canvas.getContext("2d");
+  const camBtn = $("camBtn"), playBtn = $("playBtn"), resetBtn = $("resetBtn");
+  const camMsg = $("camMsg"), liveBadge = $("liveBadge"), countdownEl = $("countdown");
+  const resultEl = $("result"), youEmoji = $("youEmoji"), aiEmoji = $("aiEmoji");
+
+  const score = { win: 0, draw: 0, lose: 0 };
+  let hands = null, running = false, cameraOn = false;
+  let busy = false;            // กำลังเล่นรอบอยู่
+  let history = [];            // [{t, g}] ท่าที่ตรวจพบล่าสุด
+
+  const CONNECTIONS = [
+    [0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[5,9],[9,10],[10,11],[11,12],
+    [9,13],[13,14],[14,15],[15,16],[13,17],[17,18],[18,19],[19,20],[0,17]
+  ];
+
+  // ---------- Machine vision: จำแนกท่าจาก landmark ----------
+  const d = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+
+  function classify(lm) {
+    const wrist = lm[0];
+    // นิ้วเหยียด = ปลายนิ้วอยู่ไกลจากข้อมือมากกว่าข้อกลาง (ไม่ขึ้นกับการหมุนมือ)
+    const ext = [[8,6],[12,10],[16,14],[20,18]].map(([tip, pip]) => d(wrist, lm[tip]) > d(wrist, lm[pip]) * 1.12);
+    const [idx, mid, ring, pinky] = ext;
+    const n = ext.filter(Boolean).length;
+    if (n === 0) return "rock";
+    if (n === 4) return "paper";
+    if (idx && mid && !ring && !pinky) return "scissors";
+    return null;
+  }
+
+  function onResults(res) {
+    canvas.width = video.videoWidth || 640;
+    canvas.height = video.videoHeight || 480;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    let g = null;
+    if (res.multiHandLandmarks && res.multiHandLandmarks.length) {
+      const lm = res.multiHandLandmarks[0];
+      g = classify(lm);
+      drawHand(lm);
+    }
+    const now = performance.now();
+    history.push({ t: now, g });
+    history = history.filter(h => now - h.t < 1500);
+    liveBadge.textContent = "ตรวจพบ: " + (g ? GESTURES[g].emoji + " " + GESTURES[g].name : (res.multiHandLandmarks && res.multiHandLandmarks.length ? "ท่าไม่ชัด" : "ไม่เห็นมือ"));
+  }
+
+  function drawHand(lm) {
+    const w = canvas.width, h = canvas.height;
+    ctx.lineWidth = 4; ctx.strokeStyle = "#22c55e"; ctx.lineCap = "round";
+    CONNECTIONS.forEach(([a, b]) => {
+      ctx.beginPath();
+      ctx.moveTo(lm[a].x * w, lm[a].y * h);
+      ctx.lineTo(lm[b].x * w, lm[b].y * h);
+      ctx.stroke();
+    });
+    ctx.fillStyle = "#ffffff"; ctx.strokeStyle = "#15803d"; ctx.lineWidth = 2;
+    lm.forEach(p => { ctx.beginPath(); ctx.arc(p.x * w, p.y * h, 5, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); });
+  }
+
+  // ---------- กล้อง ----------
+  async function startCamera() {
+    camBtn.disabled = true;
+    camMsg.textContent = "กำลังโหลดโมเดล AI และเปิดกล้อง...";
+    try {
+      hands = new Hands({ locateFile: f => `https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/${f}` });
+      hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.6, minTrackingConfidence: 0.6 });
+      hands.onResults(onResults);
+
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480, facingMode: "user" }, audio: false });
+      video.srcObject = stream;
+      await video.play();
+      await hands.initialize();
+
+      cameraOn = true; running = true;
+      camMsg.hidden = true; liveBadge.hidden = false;
+      camBtn.textContent = "📷 กล้องเปิดอยู่";
+      playBtn.disabled = false;
+      resultEl.textContent = "พร้อมแล้ว! กด “เริ่มเล่น”";
+      loop();
+    } catch (err) {
+      console.error(err);
+      camMsg.innerHTML = "เปิดกล้องไม่สำเร็จ ❌<br>กรุณาอนุญาตการใช้กล้อง และเปิดไฟล์นี้ผ่านเบราว์เซอร์ (Chrome/Edge/Safari)<br>ต้องเชื่อมต่ออินเทอร์เน็ตเพื่อโหลดโมเดลในครั้งแรก";
+      camBtn.disabled = false;
+    }
+  }
+
+  async function loop() {
+    if (!running) return;
+    if (video.readyState >= 2) {
+      try { await hands.send({ image: video }); } catch (e) { console.error(e); }
+    }
+    requestAnimationFrame(loop);
+  }
+
+  // ---------- เกม ----------
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+  function dominantGesture(windowMs) {
+    const now = performance.now();
+    const counts = {};
+    history.filter(h => now - h.t <= windowMs && h.g).forEach(h => counts[h.g] = (counts[h.g] || 0) + 1);
+    let best = null, max = 0;
+    for (const k in counts) if (counts[k] > max) { max = counts[k]; best = k; }
+    return max >= 3 ? best : null;
+  }
+
+  async function playRound() {
+    if (busy || !cameraOn) return;
+    busy = true; playBtn.disabled = true;
+    youEmoji.textContent = "❔"; aiEmoji.textContent = "🤖";
+    resultEl.className = "result"; resultEl.textContent = "เตรียมตัว...";
+
+    for (const word of ["เป่า", "ยิ้ง", "ฉุบ!"]) {
+      countdownEl.textContent = word;
+      aiEmoji.textContent = "✊";
+      await sleep(750);
+    }
+    countdownEl.textContent = "";
+    await sleep(350); // ให้เวลาทำท่าค้างก่อนจับภาพตัดสิน
+
+    const player = dominantGesture(800);
+    if (!player) {
+      resultEl.className = "result";
+      resultEl.textContent = "AI มองไม่เห็นท่าชัดเจน ลองใหม่อีกครั้งนะ 🙈";
+      aiEmoji.textContent = "🤖";
+    } else {
+      const keys = Object.keys(GESTURES);
+      const ai = keys[Math.floor(Math.random() * keys.length)];
+      youEmoji.textContent = GESTURES[player].emoji;
+      aiEmoji.textContent = GESTURES[ai].emoji;
+
+      if (player === ai) {
+        score.draw++; resultEl.className = "result draw"; resultEl.textContent = "🤝 เสมอ!";
+      } else if (BEATS[player] === ai) {
+        score.win++; resultEl.className = "result win";
+        resultEl.textContent = `🎉 คุณชนะ! ${GESTURES[player].name}ชนะ${GESTURES[ai].name}`;
+      } else {
+        score.lose++; resultEl.className = "result lose";
+        resultEl.textContent = `🤖 AI ชนะ! ${GESTURES[ai].name}ชนะ${GESTURES[player].name}`;
+      }
+      updateScore();
+    }
+    busy = false; playBtn.disabled = false;
+    playBtn.textContent = "▶ เล่นอีกรอบ";
+  }
+
+  function updateScore() {
+    $("sWin").textContent = score.win;
+    $("sDraw").textContent = score.draw;
+    $("sLose").textContent = score.lose;
+  }
+
+  camBtn.addEventListener("click", startCamera);
+  playBtn.addEventListener("click", playRound);
+  resetBtn.addEventListener("click", () => {
+    score.win = score.draw = score.lose = 0; updateScore();
+    youEmoji.textContent = "❔"; aiEmoji.textContent = "🤖";
+    resultEl.className = "result"; resultEl.textContent = cameraOn ? "รีเซ็ตแล้ว กด “เริ่มเล่น”" : "กดเปิดกล้อง แล้วกด “เริ่มเล่น”";
+  });
+})();
+</script>
+</body>
+</html>
